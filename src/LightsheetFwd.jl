@@ -2,7 +2,7 @@ module LightSheetSimulation
 
 export simulate_lightsheet_psf, simulate_lightsheet_image
 
-using PointSpreadFunctions, LinearAlgebra, FourierTools, NDTools, FFTW
+using PointSpreadFunctions, LinearAlgebra, FourierTools, NDTools
 
 function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
 
