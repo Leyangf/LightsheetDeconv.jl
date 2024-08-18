@@ -25,4 +25,4 @@ nimg = poisson(lightsheet_img, nphotons)
 
 @vt obj conv_psf(obj, h_det) nimg res1[:obj]
 
-# @test isapprox(sum(res1[:obj]), sum(obj), atol=1e-3)
+@test isapprox(sum(res1[:obj]), sum(obj), atol=1e-3)
