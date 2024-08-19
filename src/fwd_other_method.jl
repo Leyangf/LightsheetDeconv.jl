@@ -1,4 +1,4 @@
-using PointSpreadFunctions, View5D, LinearAlgebra, FFTW, NDTools, SyntheticObjects
+using PointSpreadFunctions, View5D, LinearAlgebra, FourierTools, NDTools, SyntheticObjects
 # using Images, FileIO
 # Define the size and PSF parameters
 sz = (128, 128, 128)
@@ -29,7 +29,6 @@ h_det = psf(sz, pp_det; sampling=(0.20, 0.2, 0.200))
 # Generate a 3D object
 obj = filaments3D(sz)
 
-# Function to compute the lightsheet image by performing a 2d convolution and a 1d integral
 function compute_lightsheet_image(obj, psf_comp_x, psf_comp_y, h_det, max_components, sz, z_0)
     # Initialize the resulting image
     f = zeros(Float64, sz[1], sz[2], sz[3])
@@ -49,17 +48,13 @@ function compute_lightsheet_image(obj, psf_comp_x, psf_comp_y, h_det, max_compon
             # Ensure w is within bounds
             if w > 0 && w <= sz[3]
                 # Reorient the illumination component in the z-direction
-                illu_z = reorient(psf_comp_x[i], Val(3))[:, :, w]
+                illu_z = reorient(psf_comp_x[i], Val(3))[:, :, w] .* h_det[:, :, w]
 
                 # Compute K as the product of the illumination components and the object
-                K = illu_z .* obj[:, :, k]
+                K = illu_x .* obj[:, :, k]
 
                 # Convolve K with the detection PSF
-                if w <= sz[3]
-                    K_conv = conv_psf(K, h_det[:, :, w])
-                else
-                    K_conv = conv_psf(K, h_det[:, :, sz[3]])
-                end
+                K_conv = conv_psf(K, illu_z)
 
                 # Accumulate the convolution result
                 integral_result[:, :, k] += K_conv
@@ -67,9 +62,9 @@ function compute_lightsheet_image(obj, psf_comp_x, psf_comp_y, h_det, max_compon
         end
 
         # Accumulate the integral result into the final image
-        f += illu_x .* integral_result
+        f += integral_result
     end
-
+    
     return f
 end
 
