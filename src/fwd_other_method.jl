@@ -37,6 +37,7 @@ function compute_lightsheet_image(obj, psf_comp_x, psf_comp_y, h_det, max_compon
     for i in 1:max_components
         # Reorient the illumination component in the x-direction
         illu_x = reorient(psf_comp_y[i], Val(1))
+        illu_z = reorient(psf_comp_x[i], Val(3))
 
         # Initialize the integral result for this component
         integral_result = zeros(Float64, sz[1], sz[2], sz[3])
@@ -48,13 +49,13 @@ function compute_lightsheet_image(obj, psf_comp_x, psf_comp_y, h_det, max_compon
             # Ensure w is within bounds
             if w > 0 && w <= sz[3]
                 # Reorient the illumination component in the z-direction
-                illu_z = reorient(psf_comp_x[i], Val(3))[:, :, w] .* h_det[:, :, w]
+                h_z = illu_z[:, :, w] .* h_det[:, :, w]
 
                 # Compute K as the product of the illumination components and the object
                 K = illu_x .* obj[:, :, k]
 
                 # Convolve K with the detection PSF
-                K_conv = conv_psf(K, illu_z)
+                K_conv = conv_psf(K, h_z)
 
                 # Accumulate the convolution result
                 integral_result[:, :, k] += K_conv
