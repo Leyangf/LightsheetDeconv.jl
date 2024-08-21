@@ -31,12 +31,12 @@ function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
     return psf_comp_x, psf_comp_y, h_det
 end
 
-function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_x, psf_comp_y, h_det, max_components) where {T, N}
+function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_x, psf_comp_y, h_det, fwd_components) where {T, N}
 
     lightsheet_img = zeros(eltype(obj), sz)
-    for n in 1:max_components
-        psf_total_comp = reorient(psf_comp_x[n], Val(3)) .* h_det
-        lightsheet_img += conv_psf(obj .* reorient(psf_comp_y[n], Val(1)), psf_total_comp)
+    for n in 1:fwd_components
+        # psf_total_comp = reorient(psf_comp_x[n], Val(3)) .* h_det
+        lightsheet_img += conv_psf(obj .* reorient(psf_comp_y[n], Val(1)), reorient(psf_comp_x[n], Val(3)) .* h_det)
     end
     return lightsheet_img
 end
