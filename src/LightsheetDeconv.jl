@@ -6,9 +6,7 @@ include("LightsheetFwd.jl")
 
 using .LightSheetSimulation
 using InverseModeling
-using Noise, LinearAlgebra
-using PointSpreadFunctions, FourierTools, Statistics
-using View5D
+using PointSpreadFunctions, FourierTools, Statistics, LinearAlgebra
 
 function perform_deconvolution(nimg, psf_comp_x, psf_comp_y, h_det, bwd_components)
     sz = size(nimg)
