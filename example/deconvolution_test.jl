@@ -1,8 +1,9 @@
-#include("../src/LightsheetFwd.jl")
+# include("../src/LightsheetFwd.jl")
 include("../src/LightsheetDeconv.jl")
 
 #using .LightSheetSimulation
 using .LightSheetDeconv
+# using .LightSheetSimulation
 
 using PointSpreadFunctions, FourierTools, NDTools, Noise
 using SyntheticObjects
@@ -27,26 +28,23 @@ function create_3d_beads_image(sz, num_beads::Int, bead_intensity::Float64)
     end
     return img
 end
-beads_image = create_3d_beads_image(sz, 500, 2.0)
-@vt beads_image
+beads_img = create_3d_beads_image(sz, 500, 2.0)
 
 # Create lightsheet images with different componnets numbers
-beads_img1 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 1)
-beads_img4 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 4)
-beads_img20 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 20)
-@vt beads_image, lightsheet_img1, lightsheet_img4, lightsheet_img20
+beads_img_blur = LightSheetSimulation.simulate_lightsheet_image(beads_img, sz, psf_comp_x, psf_comp_y, h_det, 20)
+@vt beads_img, beads_img_blur
 
 # nimg = poisson(lightsheet_img20, 10)
 
 # Deconvolution of the beads image with main componnets
-res1, myloss1 = LightSheetDeconv.perform_deconvolution(lightsheet_img20, psf_comp_x, psf_comp_y, h_det, 4)
-@vt beads_image beads_img20 res1[:obj]
+res1 = LightSheetDeconv.perform_deconvolution(beads_img_blur, psf_comp_x, psf_comp_y, h_det, 4)
+@vt beads_img beads_img_blur res1[:obj]
 
 
 # Use filaments as object
-filaments_image = filaments3D(sz)
+fila_img = filaments3D(sz)
 # Create lightsheet image with 20 components
-filaments_img20 = LightSheetSimulation.simulate_lightsheet_image(filaments_image, sz, psf_comp_x, psf_comp_y, h_det, 20)
+fila_img_blur = LightSheetSimulation.simulate_lightsheet_image(fila_img, sz, psf_comp_x, psf_comp_y, h_det, 20)
 # Deconvolution of the beads image with main componnets
-res2, myloss2 = LightSheetDeconv.perform_deconvolution(lightsheet_img202, psf_comp_x, psf_comp_y, h_det, 1)
-@vt obj lightsheet_img202 res2[:obj]
+res2  = LightSheetDeconv.perform_deconvolution(fila_img_blur, psf_comp_x, psf_comp_y, h_det, 4)
+@vt fila_img, fila_img_blur res2[:obj]
