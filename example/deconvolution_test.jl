@@ -31,22 +31,22 @@ beads_image = create_3d_beads_image(sz, 500, 2.0)
 @vt beads_image
 
 # Create lightsheet images with different componnets numbers
-lightsheet_img1 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 1)
-lightsheet_img4 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 4)
-lightsheet_img20 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 20)
+beads_img1 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 1)
+beads_img4 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 4)
+beads_img20 = LightSheetSimulation.simulate_lightsheet_image(beads_image, sz, psf_comp_x, psf_comp_y, h_det, 20)
 @vt beads_image, lightsheet_img1, lightsheet_img4, lightsheet_img20
 
 # nimg = poisson(lightsheet_img20, 10)
 
 # Deconvolution of the beads image with main componnets
 res1, myloss1 = LightSheetDeconv.perform_deconvolution(lightsheet_img20, psf_comp_x, psf_comp_y, h_det, 4)
-@vt beads_image lightsheet_img20 res1[:obj]
+@vt beads_image beads_img20 res1[:obj]
 
 
 # Use filaments as object
-obj = filaments3D(sz)
+filaments_image = filaments3D(sz)
 # Create lightsheet image with 20 components
-lightsheet_img202 = LightSheetSimulation.simulate_lightsheet_image(obj, sz, psf_comp_x, psf_comp_y, h_det, 20)
+filaments_img20 = LightSheetSimulation.simulate_lightsheet_image(filaments_image, sz, psf_comp_x, psf_comp_y, h_det, 20)
 # Deconvolution of the beads image with main componnets
-res2, myloss2 = LightSheetDeconv.perform_deconvolution(lightsheet_img202, psf_comp_x, psf_comp_y, h_det, 4)
+res2, myloss2 = LightSheetDeconv.perform_deconvolution(lightsheet_img202, psf_comp_x, psf_comp_y, h_det, 1)
 @vt obj lightsheet_img202 res2[:obj]
