@@ -15,28 +15,28 @@ function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
 
     F = svd(otf2d)
 
-    otf_comp_x = Vector{Any}(undef, max_components)
     otf_comp_y = Vector{Any}(undef, max_components)
-    otf_comp_y[1]= (F.S[1] * F.Vt[1, :])'
-    otf_comp_x[1]= F.U[:, 1]
+    otf_comp_z = Vector{Any}(undef, max_components)
+    otf_comp_z[1]= (F.S[1] * F.Vt[1, :])'
+    otf_comp_y[1]= F.U[:, 1]
     for n in 2:max_components
-        otf_comp_y[n]= (F.S[n] * F.Vt[n, :])'
-        otf_comp_x[n]= F.U[:, n]
+        otf_comp_z[n]= (F.S[n] * F.Vt[n, :])'
+        otf_comp_y[n]= F.U[:, n]
     end
 
     # Use custom_ifft from CustomGradients
-    psf_comp_x = [real.(ifft(Array(otf_comp_x[n]), 1)) for n in 1:max_components]
-    psf_comp_y = [real.(ifft(Array(otf_comp_y[n]), 2)) for n in 1:max_components]
+    psf_comp_y = [real.(ifft(Array(otf_comp_y[n]), 1)) for n in 1:max_components]
+    psf_comp_z = [real.(ifft(Array(otf_comp_z[n]), 2)) for n in 1:max_components]
 
-    return psf_comp_x, psf_comp_y, h_det
+    return psf_comp_y, psf_comp_z, h_det
 end
 
-function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_x, psf_comp_y, h_det, fwd_components) where {T, N}
+function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_y, psf_comp_z, h_det, fwd_components) where {T, N}
 
     lightsheet_img = zeros(eltype(obj), sz)
     for n in 1:fwd_components
-        # psf_total_comp = reorient(psf_comp_x[n], Val(3)) .* h_det
-        lightsheet_img += conv_psf(obj .* reorient(psf_comp_y[n], Val(1)), reorient(psf_comp_x[n], Val(3)) .* h_det)
+        psf_total_comp = reorient(psf_comp_y[n], Val(3)) .* h_det
+        lightsheet_img += conv_psf(obj .* reorient(psf_comp_z[n], Val(1)), psf_total_comp)
     end
     return lightsheet_img
 end
