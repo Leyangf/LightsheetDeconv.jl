@@ -8,12 +8,12 @@ using .LightSheetSimulation
 using InverseModeling
 using PointSpreadFunctions, FourierTools, Statistics, LinearAlgebra
 
-function perform_deconvolution(nimg, psf_comp_y, psf_comp_z, h_det, bwd_components)
+function perform_deconvolution(nimg, psf_comp_t, psf_comp_s, h_det, bwd_components)
     sz = size(nimg)
     # Define the forward model for deconvolution
     function forward_model(params)
         obj = params(:obj)
-        return LightSheetSimulation.simulate_lightsheet_image(obj, sz, psf_comp_y, psf_comp_z, h_det, bwd_components)
+        return LightSheetSimulation.simulate_lightsheet_image(obj, sz, psf_comp_t, psf_comp_s, h_det, bwd_components)
     end
 
     # Create forward and backward models
