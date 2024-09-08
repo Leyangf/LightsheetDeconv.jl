@@ -8,8 +8,7 @@ function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
 
     # illumination psf:
     h2d = sum(abs2.(sum(apsf(sz, pp_illu; sampling=sampling), dims=1)), dims=4)[1, :, :, 1]
-    h2d_r = permutedims(h2d, (2, 1))
-    otf2d = fft(h2d_r)
+    otf2d = fft(h2d)
 
     # detection psf:
     h_det = psf(sz, pp_det; sampling=sampling)
@@ -25,7 +24,7 @@ function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
         otf_comp_t[n]= F.U[:, n]
     end
 
-    # Use custom_ifft from CustomGradients
+    
     psf_comp_t = [real.(ifft(Array(otf_comp_t[n]), 1)) for n in 1:max_components]
     psf_comp_s = [real.(ifft(Array(otf_comp_s[n]), 2)) for n in 1:max_components]
 
@@ -35,10 +34,11 @@ end
 function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_t, psf_comp_s, h_det, fwd_components) where {T, N}
 
     lightsheet_img = zeros(eltype(obj), sz)
+
     for n in 1:fwd_components
-        psf_det_comb = psf_comp_t[n] .* h_det
-        lightsheet_img += conv_psf(obj .* psf_comp_s[n], psf_det_comb)
-    end
+         psf_det_comb = reorient(psf_comp_t[n], Val(3)) .* h_det
+         lightsheet_img += conv_psf(obj .* reorient(psf_comp_s[n], Val(1)), psf_det_comb)
+         end
     return lightsheet_img
 end
 
