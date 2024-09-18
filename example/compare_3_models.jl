@@ -46,7 +46,7 @@ volume(sheet_model_dslm)
 # ----------------------------------------------------------------------
 
 # Simulate Gaussian-based light sheet
-sheet_model_gaussian = simulate_elliptic_gaussian(sz, 0.488, 0.33, 1.52; sampling=(0.2, 0.2, 0.2))
+sheet_model_gaussian = simulate_elliptic_gaussian(sz, 0.488, 0.33, 1.52; sampling=(0.2, 0.2, 0.2), width_factor=2.0) # Introduce width factor, but still thicker when same FOV
 sheet_model_gaussian = normalize_intensity(sheet_model_gaussian)
 
 # Display the Gaussian-based light sheet model

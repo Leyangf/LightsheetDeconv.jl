@@ -159,8 +159,8 @@ module TestFunctions
     # Function: simulate_elliptic_gaussian
     # Description: Simulates an elliptic Gaussian beam for light sheet microscopy.
     # ----------------------------------------------------------------------
-    function simulate_elliptic_gaussian(sz, λ, NA, n; sampling=(0.2, 0.2, 0.2))
-        W_z0 = λ / (π * NA * n)  # Beam waist in z direction
+    function simulate_elliptic_gaussian(sz, λ, NA, n; sampling=(0.2, 0.2, 0.2), width_factor)
+        W_z0 = width_factor * λ / (π * NA * n)  # Beam waist in z direction
         W_y0 = W_z0 * 200        # Beam waist in y direction (scaled for anisotropy)
 
         # Rayleigh ranges
