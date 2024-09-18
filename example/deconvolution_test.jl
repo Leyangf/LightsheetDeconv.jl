@@ -3,10 +3,10 @@
 # ----------------------------------------------------------------------
 
 include("../src/LightsheetDeconv.jl")
-include("../src/test_images.jl")
+include("../src/util.jl")
 
 using .LightSheetDeconv
-using .TestImages
+using .TestFunctions
 
 using PointSpreadFunctions, FourierTools, NDTools, Noise
 using SyntheticObjects
