@@ -98,12 +98,16 @@ module TestFunctions
 
     # ----------------------------------------------------------------------
     # Function: normalize_intensity
-    # Description: Normalizes the intensity of the light sheet by dividing each value by the total intensity.
+    # Description: Normalizes the intensity of the light sheet by dividing each value by the max intensity.
     # ----------------------------------------------------------------------
     function normalize_intensity(light_sheet::AbstractArray)
-        total_intensity = sum(light_sheet)
-        light_sheet .= light_sheet ./ total_intensity  # In-place normalization
-        return light_sheet
+        max_intensity = maximum(light_sheet)
+        if max_intensity == 0
+            return light_sheet  # Avoid division by zero
+        else
+            light_sheet .= light_sheet ./ max_intensity  # Normalize by max value
+            return light_sheet
+        end
     end
 
     # ----------------------------------------------------------------------

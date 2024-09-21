@@ -72,3 +72,12 @@ x_axis = range(-sz[1] * 0.2 / 2, sz[1] * 0.2 / 2, length=sz[1])
 Plots.plot(x_axis, fwhm_diffraction, label="Diffraction Model", xlabel="Propagation Distance (µm)", ylabel="Thickness (FWHM in z) (µm)", legend=:topright)
 Plots.plot!(x_axis, fwhm_gaussian, label="Gaussian Model")
 Plots.plot!(x_axis, fwhm_dslm, label="DSLM Model")
+
+Plots.plot(
+    Plots.heatmap(normalize_intensity(profile_diffraction), title="H2D Heatmap", colorbar=false),  # 第一张 heatmap
+    Plots.heatmap(normalize_intensity(profile_dslm), title="DSLMS Heatmap",),  # 第二张 heatmap
+    Plots.heatmap(normalize_intensity(sheet_model_gaussian[:, sz[2] ÷ 2, :]), 
+            title="Gaussian Heatmap"),  # 第三张 heatmap，转置后的
+    layout = (1, 3),  # 1行3列布局
+    size = (1200, 500)  # 设置图片大小
+)
