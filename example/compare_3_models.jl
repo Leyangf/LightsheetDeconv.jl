@@ -8,7 +8,7 @@ using Plots, GLMakie
 
 # Define size and Point Spread Function (PSF) parameters
 sz = (128, 128, 128)
-pp_illu = PSFParams(0.488, 0.33, 1.52)  # Illumination parameters for PSF
+pp_illu = PSFParams(0.488, 0.25, 1.52)  # Illumination parameters for PSF
 
 # ----------------------------------------------------------------------
 # Diffraction-based Light Sheet Simulation
@@ -19,8 +19,8 @@ h2d = sum(abs2.(sum(apsf(sz, pp_illu; sampling=(0.20, 0.2, 0.2)), dims=1)), dims
 profile_diffraction = transpose(h2d)
 
 # Create and normalize the sheet model based on diffraction profile
-sheet_model_diffraction = create_sheet_model(profile_diffraction, sz)
-sheet_model_diffraction = normalize_intensity(sheet_model_diffraction)
+sheet_model_diffraction = TestFunctions.create_sheet_model(profile_diffraction, sz)
+sheet_model_diffraction = TestFunctions.normalize_intensity(sheet_model_diffraction)
 
 # Display the diffraction-based light sheet model
 volume(sheet_model_diffraction)
@@ -35,8 +35,8 @@ h2d_dslm = sum(h3d, dims=1)[1, :, :]
 profile_dslm = transpose(h2d_dslm)
 
 # Create and normalize the sheet model based on DSLM profile
-sheet_model_dslm = create_sheet_model(profile_dslm, sz)
-sheet_model_dslm = normalize_intensity(sheet_model_dslm)
+sheet_model_dslm = TestFunctions.create_sheet_model(profile_dslm, sz)
+sheet_model_dslm = TestFunctions.normalize_intensity(sheet_model_dslm)
 
 # Display the DSLM-based light sheet model
 volume(sheet_model_dslm)
@@ -46,8 +46,8 @@ volume(sheet_model_dslm)
 # ----------------------------------------------------------------------
 
 # Simulate Gaussian-based light sheet
-sheet_model_gaussian = simulate_elliptic_gaussian(sz, 0.488, 0.33, 1.52; sampling=(0.2, 0.2, 0.2), width_factor=2.0) # Introduce width factor, but still thicker when same FOV
-sheet_model_gaussian = normalize_intensity(sheet_model_gaussian)
+sheet_model_gaussian = TestFunctions.simulate_elliptic_gaussian(sz, 0.488, 0.25, 1.52; sampling=(0.2, 0.2, 0.2), width_factor=2.0) # Introduce width factor, but still thicker when same FOV
+sheet_model_gaussian = TestFunctions.normalize_intensity(sheet_model_gaussian)
 
 # Display the Gaussian-based light sheet model
 volume(sheet_model_gaussian)
@@ -57,9 +57,9 @@ volume(sheet_model_gaussian)
 # ----------------------------------------------------------------------
 
 # Calculate FWHM for diffraction, DSLM, and Gaussian models along x-axis
-fwhm_diffraction = calculate_fwhm_for_model(sheet_model_diffraction, sz, :x)
-fwhm_gaussian = calculate_fwhm_for_model(sheet_model_gaussian, sz, :x)
-fwhm_dslm = calculate_fwhm_for_model(sheet_model_dslm, sz, :x)
+fwhm_diffraction = TestFunctions.calculate_fwhm_for_model(sheet_model_diffraction, sz, :x)
+fwhm_gaussian = TestFunctions.calculate_fwhm_for_model(sheet_model_gaussian, sz, :x)
+fwhm_dslm = TestFunctions.calculate_fwhm_for_model(sheet_model_dslm, sz, :x)
 
 # ----------------------------------------------------------------------
 # Plot Thickness as a Function of Propagation Distance
@@ -73,11 +73,27 @@ Plots.plot(x_axis, fwhm_diffraction, label="Diffraction Model", xlabel="Propagat
 Plots.plot!(x_axis, fwhm_gaussian, label="Gaussian Model")
 Plots.plot!(x_axis, fwhm_dslm, label="DSLM Model")
 
+# Plot heatmap for diffraction, DSLM, and Gaussian models
 Plots.plot(
-    Plots.heatmap(normalize_intensity(profile_diffraction), title="H2D Heatmap", colorbar=false),  # 第一张 heatmap
-    Plots.heatmap(normalize_intensity(profile_dslm), title="DSLMS Heatmap",),  # 第二张 heatmap
-    Plots.heatmap(normalize_intensity(sheet_model_gaussian[:, sz[2] ÷ 2, :]), 
-            title="Gaussian Heatmap"),  # 第三张 heatmap，转置后的
-    layout = (1, 3),  # 1行3列布局
-    size = (1200, 500)  # 设置图片大小
+    Plots.heatmap(TestFunctions.normalize_intensity(h2d),title="Diffraction Model with Cylindrical Lens"), 
+    Plots.heatmap(TestFunctions.normalize_intensity(h2d_dslm),title="Diffraction Model with DSLM"), 
+    Plots.heatmap(TestFunctions.normalize_intensity(transpose(sheet_model_gaussian[:, sz[2] ÷ 2, :])), 
+            title="Elliptical Gaussian Model"), 
+    layout = (3, 1),
+    size = (500, 700) 
 )
+
+# ----------------------------------------------------------------------
+# Plot Intensity Profiles
+# ----------------------------------------------------------------------
+
+# Plot intensity profiles for diffraction, DSLM, and Gaussian models
+profile_h2d = h2d[:, size(h2d, 2) ÷ 2]  # Middle column of h2d
+profile_h2d_dslm = h2d_dslm[:, size(h2d_dslm, 2) ÷ 2]  # Middle column of h2d_dslm
+profile_gaussian = sheet_model_gaussian[:, size(sheet_model_gaussian, 2) ÷ 2, size(sheet_model_gaussian, 3) ÷ 2]  # Middle slice of Gaussian model
+Plots.plot(
+    profile_h2d, label="Cylindrical Lens", lw=2, color=:blue,
+    xlabel="Position", ylabel="Intensity", title="Intensity Profiles of Light Sheets"
+)
+Plots.plot!(profile_h2d_dslm, label="DSLM", lw=2, color=:green)
+Plots.plot!(profile_gaussian, label="Elliptical Gaussian", lw=2, color=:red)
