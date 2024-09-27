@@ -48,7 +48,7 @@ module TestFunctions
         z_step = max(floor(Int, sz[3] / num_per_dim), 1)
 
         # Cartesian index generator with steps
-        cartesian_indices = CartesianIndices((20:x_step:sz[1] - 20, 20:y_step:sz[2] - 20, 20:z_step:sz[3] - 20))
+        cartesian_indices = CartesianIndices((10:x_step:sz[1] - 10, 10:y_step:sz[2] - 10, 10:z_step:sz[3] - 10))
 
         # Add beads to the image based on the Cartesian indices
         for idx in cartesian_indices
