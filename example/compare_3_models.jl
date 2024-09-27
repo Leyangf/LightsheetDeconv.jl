@@ -46,13 +46,9 @@ volume(sheet_model_dslm)
 # ----------------------------------------------------------------------
 
 # Simulate Gaussian-based light sheet
-<<<<<<< HEAD
 sheet_model_gaussian = TestFunctions.simulate_elliptic_gaussian(sz, 0.488, 0.25, 1.52; sampling=(0.2, 0.2, 0.2), width_factor=2.0) # Introduce width factor, but still thicker when same FOV
 sheet_model_gaussian = TestFunctions.normalize_intensity(sheet_model_gaussian)
-=======
-sheet_model_gaussian = simulate_elliptic_gaussian(sz, 0.488, 0.33, 1.52; sampling=(0.2, 0.2, 0.2), width_factor=1.8) # Introduce width factor, but still thicker when same FOV
-sheet_model_gaussian = normalize_intensity(sheet_model_gaussian)
->>>>>>> 37d73043d03d34cf8c2523171044bf74e7734862
+
 
 # Display the Gaussian-based light sheet model
 volume(sheet_model_gaussian)
@@ -76,27 +72,18 @@ Plots.plot!(x_axis, fwhm_dslm, label="DSLM Model")
 
 # Plot heatmap for diffraction, DSLM, and Gaussian models
 Plots.plot(
-<<<<<<< HEAD
     Plots.heatmap(TestFunctions.normalize_intensity(h2d),title="Diffraction Model with Cylindrical Lens"), 
     Plots.heatmap(TestFunctions.normalize_intensity(h2d_dslm),title="Diffraction Model with DSLM"), 
-    Plots.heatmap(TestFunctions.normalize_intensity(transpose(sheet_model_gaussian[:, sz[2] ÷ 2, :])), 
-=======
-    Plots.heatmap(normalize_intensity(h2d),title="Diffraction Model with Cylindrical Lens"), 
-    Plots.heatmap(normalize_intensity(h2d_dslm),title="Diffraction Model with DSLM"), 
-    Plots.heatmap(normalize_intensity(transpose(sheet_model_gaussian[:, sz[2] ÷ 2, :])), 
->>>>>>> 37d73043d03d34cf8c2523171044bf74e7734862
-            title="Elliptical Gaussian Model"), 
+    Plots.heatmap(TestFunctions.normalize_intensity(transpose(sheet_model_gaussian[:, sz[2] ÷ 2, :]))), 
+            title="Elliptical Gaussian Model", 
     layout = (3, 1),
     size = (500, 700) 
-)
+    )
 
-<<<<<<< HEAD
 # ----------------------------------------------------------------------
 # Plot Intensity Profiles
 # ----------------------------------------------------------------------
 
-=======
->>>>>>> 37d73043d03d34cf8c2523171044bf74e7734862
 # Plot intensity profiles for diffraction, DSLM, and Gaussian models
 profile_h2d = h2d[:, size(h2d, 2) ÷ 2]  # Middle column of h2d
 profile_h2d_dslm = h2d_dslm[:, size(h2d_dslm, 2) ÷ 2]  # Middle column of h2d_dslm
