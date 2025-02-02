@@ -4,16 +4,6 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-end
-
 # ╔═╡ ff4897c6-fef6-4071-bbbc-1c4fc204b990
 begin
 	using Pkg
@@ -32,11 +22,8 @@ using Plots
 # ╔═╡ 45bc0270-d6c2-43c9-bdfc-c9ed2b2b165b
 using GLMakie
 
-# ╔═╡ d700b1bb-d20e-4ca1-8c83-10aa33fa23b3
+# ╔═╡ c41b41bf-33f2-46b5-9f14-b80ec1242ef1
 using InverseModeling
-
-# ╔═╡ bf5ef0ae-487f-4a8a-8933-4642eb2aca8b
-using Printf
 
 # ╔═╡ d32b6c5e-a724-4a32-b3d1-c0b802d028c5
 md"# LightsheetDeconv.jl
@@ -50,156 +37,130 @@ The PSFs (Point Spread Functions) are modeled using **PointSpreadFunctions.jl**,
 # Define the parameters to create an accurate model of the point spread function (PSF) based on your microscope's optical setup.
 
 begin
-	sz = (128, 128, 128) # dimensions of the 3D grid (in voxels) where the PSF will be calculated. 
-	pp_illu = PSFParams(0.488, 0.33, 1.53) # parameters for the illumination PSF
+	sz = (128, 128, 128)
+	sampling = (0.13, 0.13, 0.13)
+	aberr = Aberrations([Zernike_Tilt, Zernike_ObliqueAstigmatism, Zernike_Defocus, Zernike_VerticalTrefoil, Zernike_HorizontalComa],[-0.78, -1.3, -2.36, -0.4, -1.21]) #
 	
-	aberr = Aberrations([Zernike_Tilt, Zernike_Defocus, Zernike_VerticalAstigmatism, Zernike_VerticalTrefoil, Zernike_Spherical],[-0.78, -2.36, -1.3, 0.2, -1.2]) #
-	pp_det = PSFParams(0.525, 0.5, 1.53; method=MethodPropagateIterative, aberrations= aberr) # parameters for the detection PSF
-	
-	sampling = (0.20, 0.20, 0.20) # sampling intervals in the x, y, and z directions, defines the voxel size for the grid
+	pp_det = PSFParams(0.525, 1, 1.35; method=MethodPropagateIterative, aberrations= aberr) # parameters for the detection PSF
+	pp_ill = PSFParams(0.488, 0.25, 1.35) # parameters for the illumination PSF
 end
 
 # ╔═╡ eb47b33e-078d-4e44-b621-e5d68555c54d
-md"## 1. Simulate PSF"
+md"## 1. Simulate Beam Profile"
 
-# ╔═╡ 0e0b9ac7-3cb1-41d7-b90f-78bde0af8678
-"""
-	simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
+# ╔═╡ 1dd75871-b80b-4e0a-8c44-1bc267d4aad5
+begin
+h_ill = sum(abs2.(sum(apsf((128, 128, 128), pp_ill; sampling=(0.13, 0.13, 0.13)), dims=1)), dims=4)[1, :, :, 1]
+h_ill= h_ill./maximum(h_ill)
+end
 
-Simulate the 3D amplitude PSF with parameter `pp_illu`, collaspe along one dimention, and calculate the intensity PSF, which represents the side view of a light sheet.
-Take the 2D Fourier transform and get the OTF. 
-Perform SVD of OTF to decompose it into its principal components whcih are then stored in `otf_comp_t` and `otf_comp_s`.
-Apply the inverse Fourier transform to each components to retrieve the PSF components in the spatial domain.
-The 3D detection PSF `h_det` is also simulated with parameters `pp_det`.
+# ╔═╡ 16fca82a-5475-44ae-be77-d9aaeba3a358
+function gaussian_profile(sz, pp::PSFParams; sampling=(0.2, 0.2), width_factor=1)
+    # Extract values from PSFParams
+    λ, NA, n = pp.λ, pp.NA, pp.n
 
-The procedure of modelling illumination PSF is as following:
-* generate 3d amplitutde PSF with `pp_illu` (use `apsf`)
-* sum over the first dimension and take the squared magnitude
-* sum over the fourth dimension which represents the electric field
-* take the `fft` of it
-* perform SVD and take main componnets of `F.U`, `F.S`, and `F.Vt`
-* store the multiplication of `F.U` into `otf_comp_t` and 
-* store the multiplication of `F.S` and `F.Vt` into `otf_comp_s`
-* take the `ifft` of it
-* store into `psf_comp_t` and `psf_comp_s`
-"""
-function simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, max_components)
+    W_0 = width_factor * λ / (π * NA * n)  # Initial beam waist
+    z_R = π * W_0^2 * n / λ             # Rayleigh length
 
-    # illumination psf:
-    h2d = sum(abs2.(sum(apsf(sz, pp_illu; sampling=sampling), dims=1)), dims=4)[1, :, :, 1]
-    otf2d = fft(h2d)
+    # Create coordinate grids (x, z)
+    x_range = range(-sz[1] * sampling[1] / 2, sz[1] * sampling[1] / 2, length=sz[1])
+    z_range = range(-sz[2] * sampling[2] / 2, sz[2] * sampling[2] / 2, length=sz[2])
 
-    # detection psf:
-    h_det = psf(sz, pp_det; sampling=sampling)
+    # Beam width function along z (since z is now the propagation direction)
+    W_z = z -> W_0 * sqrt(1 +  (z / z_R)^2)
 
-    F = svd(otf2d)
+    # Initialize PSF array
+    psf = zeros(Float64, sz...)
 
-    otf_comp_s = Vector{Any}(undef, max_components)
-    otf_comp_t = Vector{Any}(undef, max_components)
-    otf_comp_s[1]= (F.S[1] * F.Vt[1, :])'
-    otf_comp_t[1]= F.U[:, 1]
-    for n in 2:max_components
-        otf_comp_s[n]= (F.S[n] * F.Vt[n, :])'
-        otf_comp_t[n]= F.U[:, n]
+    # Compute intensity over (x, z) positions
+    for (j, z) in enumerate(z_range)  # Iterate over z first (propagation direction)
+        W_zval = W_z(z)  # Compute beam width at position z
+        for (i, x) in enumerate(x_range)
+            psf[i, j] = exp(-x^2 / (2 * W_zval^2))  # Gaussian profile in x direction
+        end
     end
 
+    return psf
+end
+
+# ╔═╡ f4e3e249-177b-443a-aec4-c302311962e0
+begin
+	h_ill_g = gaussian_profile((128, 128), pp_ill; sampling=(0.13,0.13), width_factor = 1) 
+	h_ill_g= h_ill_g./maximum(h_ill_g)
+end
+
+# ╔═╡ ddb2fc37-c995-4474-82df-0f7b7181baa1
+Plots.heatmap(h_ill[45:83, :], color=:viridis, xlabel="Dimension 1 (sz[1])", ylabel="Dimension 3 (sz[3])", title="Visualization of h_ill", aspect_ratio=:equal)
+
+# ╔═╡ 32a1abbc-66f8-4539-a392-1fa741fcef52
+Plots.heatmap(h_ill_g[45:83, :], color=:viridis, xlabel="Dimension 1 (sz[1])", ylabel="Dimension 3 (sz[3])",  title="Gaussian Beam Profile along z-axis", aspect_ratio=:equal)
+
+# ╔═╡ b6e24e3a-e731-4de9-87f7-73481bf2c93e
+md"## 2. Perform SVD and Reconstruct Beam Profile"
+
+# ╔═╡ 62ecf0f6-4926-41e7-80e1-7a9053c9e140
+max_components=4
+
+# ╔═╡ 7a6ac63b-9102-4b32-9f5a-5eae213fb597
+begin
+	   F = svd(h_ill)
     
-    psf_comp_t = [real.(ifft(Array(otf_comp_t[n]), 1)) for n in 1:max_components]
-    psf_comp_s = [real.(ifft(Array(otf_comp_s[n]), 2)) for n in 1:max_components]
-
-    return psf_comp_t, psf_comp_s, h_det
+        psf_comp_x = Vector{Any}(undef, max_components)
+        psf_comp_z = Vector{Any}(undef, max_components)
+        for n in 1:max_components
+            psf_comp_x[n]= (F.S[n] * F.Vt[n, :])'
+            psf_comp_z[n]= F.U[:, n]
+        end
+    
+        
+        psf_comp_z = [psf_comp_z[n] for n in 1:max_components]
+        psf_comp_x = [psf_comp_x[n] for n in 1:max_components]
 end
 
-# ╔═╡ 19c5aaad-7a8c-4d48-88ee-c3cdb81d591e
-# simulate the first 20 PSF componets for strength and thickness and 3D PSF for detection
-psf_comp_t, psf_comp_s, h_det = simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, 20)
-
-# ╔═╡ e95ac99c-b330-4e5e-a82a-57bb57d5bb6a
-@bind t1 PlutoUI.Slider(1:1:20, default=20, show_value=true)
-
-# ╔═╡ 17aff1a1-2d8f-40ec-87cf-805bd657583e
-# simulate reduced illumination PSF with first t1 componnets
-psf_illu_red = sum(psf_comp_t[n] * psf_comp_s[n] for n in 1:t1)
-
-# ╔═╡ c5765c7f-33ea-4e63-a1f8-5fa91c763c66
-Plots.heatmap(psf_illu_red, title="Reduced Illumination PSF", aspect_ratio=:equal, xlabel="x",ylabel="z")
-
-# ╔═╡ 7f1bf4d8-94aa-4344-9a18-29b702bcd5df
+# ╔═╡ 6c2cfdd6-2ab5-4e79-ad59-cddc7c0fb5cb
 begin
-	psf_illu_red_r = transpose(psf_illu_red)
-	sheet_model_array = reshape(psf_illu_red_r, sz[1], 1, sz[2])
-	sheet_model = repeat(sheet_model_array, 1, sz[3], 1)
-	volume(sheet_model)
+h_ill_re1 = psf_comp_z[1] .* psf_comp_x[1]
+h_ill_re1 = h_ill_re1 ./ maximum(h_ill_re1)
+h_ill_re2 = sum(psf_comp_z[n] .* psf_comp_x[n] for n=1:2)
+h_ill_re2 = h_ill_re2 ./ maximum(h_ill_re2)
 end
 
-# ╔═╡ 160e41a3-70f2-4cd3-9208-c98fe336ea34
-# generate original illumination PSF and compare with reduced one
+# ╔═╡ d2e440ac-6caf-4a0c-8199-579b6c899243
 begin
-	expected_psf_illu = sum(abs2.(sum(apsf(sz, pp_illu; sampling=sampling), dims=1)), dims=4)[1, :, :, 1]
-    dot_product = dot(psf_illu_red, expected_psf_illu)
-    norm_product = norm(psf_illu_red) * norm(expected_psf_illu)
-    ncc = dot_product / norm_product
-PlutoTest.@test ncc ≈ 1.0 atol=1e-5
+plot_opts = Dict(
+    :color => :viridis,
+    :aspect_ratio => :equal,
+    :frame => false,
+    :ticks => false,
+    :colorbar => false
+)
+
+p1 = Plots.heatmap(h_ill[45:83, :]; plot_opts...)
+p2 = Plots.heatmap(h_ill_re1[45:83, :]; plot_opts...)
+p3 = Plots.heatmap(h_ill_re2[45:83, :]; plot_opts...)
+
+Plots.plot(p1, p2, p3, layout=(3,1), link=:both, size=(800,600))
 end
 
-# ╔═╡ 0a9ad5a3-de51-4688-8f54-527b58e8eedf
-@bind slice_index1 PlutoUI.Slider(1:128, default=64, show_value=true)
+# ╔═╡ 8b1c7c9b-923e-41e1-b4ff-d25ad97d68b4
+md"## 3. Forward Simulation"
 
-# ╔═╡ f8e4eb14-e710-47d1-b119-b5cd42a9275d
-# plot each delected x-y slice of the 3d overall PSF, which is here simplized as a multiplication of illumination and detection PSF
-begin
-	psf_illu_red_20 = sum(reorient(psf_comp_t[n], Val(3)) .* reorient(psf_comp_s[n], Val(1)) for n in 1:20)
-	psf_total_red = psf_illu_red_20 .* h_det
-	Plots.heatmap(psf_total_red[:, :, slice_index1], title="Slice $slice_index1 of Reduced Overall PSF", aspect_ratio=:equal, xlabel="x",ylabel="y")
-end
+# ╔═╡ 0655e44c-0c8d-44a5-a090-7a87ab580146
+h_det = psf(sz, pp_det; sampling=sampling)
 
-# ╔═╡ 61be4784-bbc6-436c-8d44-f590efaa3cfd
-volume(psf_total_red)
-
-# ╔═╡ 065c8a55-4e0a-4216-b98b-00fef317b036
-md"## 2. Simulate Lightsheet image"
-
-# ╔═╡ 71865013-0629-4794-b30a-0208e06766b4
-"""
-	simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_t, psf_comp_s, h_det, fwd_components)
-
-Simulate the generation of a blurred light-sheet microscopy image using the previously computed PSF components. 
-Reorient the components onto x-z plane in the detection coordinate, propagating along x axis.
-The multiplication of object with the x-axis PSF component represents a illuminated slice. The multiplication of detection PSF with the z-axis PSF component represents the total PSF along detection derection.
-Convolve the two terms and get one image componnet, then stack along the fourth dimentsion.
-
-The procedure is as following:
-* initializes an empty image
-* reorient the psf_comp_t and psf_comp_s from the illumination coordinate into detection coordinate
-* multiply object with the x-axis PSF component
-* multiply detection PSF with the z-axis PSF component
-* convolve two terms
-* loop iterates over each component of the PSF and computes the contribution of each to the final image
-"""
-function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_t, psf_comp_s, h_det, fwd_components) where {T, N}
+# ╔═╡ fd2cd913-b18c-4e72-8c93-55a1ce06e5bd
+function simulate_lightsheet_image(obj::AbstractArray{T, N}, sz, psf_comp_x, psf_comp_z, h_det, fwd_components) where {T, N}
 
     lightsheet_img = zeros(eltype(obj), sz)
 
     for n in 1:fwd_components
-         psf_det_comb = reorient(psf_comp_t[n], Val(3)) .* h_det
-         lightsheet_img += conv_psf(obj .* reorient(psf_comp_s[n], Val(1)), psf_det_comb)
+         psf_det_comb = reorient(psf_comp_z[n], Val(3)) .* h_det
+         lightsheet_img += conv_psf(obj .* reorient(psf_comp_x[n], Val(1)), psf_det_comb)
          end
     return lightsheet_img
 end
 
-# ╔═╡ 0eba71d9-1520-4a8a-8168-9c39518253ce
-function simulate_image_multip(obj::AbstractArray{T, N}, sz, psf_comp_t, psf_comp_s, h_det, fwd_components) where {T, N}
-
-    lightsheet_img = zeros(eltype(obj), sz)
-
-    for n in 1:fwd_components
-         psf_comb = reorient(psf_comp_t[n], Val(3)).* reorient(psf_comp_s[n], Val(1)) .* h_det
-         lightsheet_img += conv_psf(obj , psf_comb)
-    end
-    return lightsheet_img
-end
-
-# ╔═╡ a0abcdb1-93fa-420d-9081-ea4814a5cf7e
+# ╔═╡ a730eae9-9721-430d-af3d-7bc0d7b5b54a
 # Function to generate evenly spaced beads in 3D space with intensity
 function create_evenly_beads(sz, num_beads::Int, bead_intensity::Float64)
     img = zeros(Float64, sz)
@@ -222,74 +183,62 @@ function create_evenly_beads(sz, num_beads::Int, bead_intensity::Float64)
     return img
 end
 
-# ╔═╡ 3a1cc28d-4b9f-4931-b60d-89f1b1016790
+# ╔═╡ 911d1d2e-ea34-4681-852f-5b463670e173
 begin
 # create evenly distributed beads and blur the beads image with 20 modes
 beads_img = create_evenly_beads(sz, 500, 1.0)
-beads_img_blur = simulate_lightsheet_image(beads_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+beads_img_blur = simulate_lightsheet_image(beads_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 
 volume(beads_img_blur)
 end
 
-# ╔═╡ 39fd0ef0-84c0-4605-9d6b-7281e4d2bb6d
-begin
-beads_blur_multip = simulate_image_multip(beads_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+# ╔═╡ a16713d6-ce60-46ca-bba1-4abcfecc975f
+    function create_full_bead_image(sz, bead_position::Tuple{Int, Int, Int}, bead_intensity::Float64)
+        img = zeros(Float64, sz)
+        x, y, z = bead_position
+        img[x, y, z] = bead_intensity
+        return img
+    end
 
-volume(beads_blur_multip)
-end
-
-# ╔═╡ a2edfbd5-c4a5-4e69-bcf6-cf5524c9ac85
-begin
-	# create two 3D images, one with a bead at center, while another one at corner
-	
-	function create_full_bead_image(sz, bead_position::Tuple{Int,Int,Int}, bead_intensity::Float64)
-	        img = zeros(Float64, sz)
-	        x, y, z = bead_position
-	        img[x, y, z] = bead_intensity
-	    return img
-	end
-	    
-	function crop_subregion(img, sub_sz, center_pos)
-	        # Calculate the start and end indices for cropping
-	        start_idx = (center_pos[1] - sub_sz[1] ÷ 2,
-	                     center_pos[2] - sub_sz[2] ÷ 2,
-	                     center_pos[3] - sub_sz[3] ÷ 2)
-	        end_idx = (start_idx[1] + sub_sz[1] - 1,
-	                   start_idx[2] + sub_sz[2] - 1,
-	                   start_idx[3] + sub_sz[3] - 1)
-	        
-	        # Ensure indices are within bounds
-	        start_idx = clamp.(start_idx, 1, size(img))
-	        end_idx = clamp.(end_idx, 1, size(img))
-	        
-	        # Crop the region
-	    return img[start_idx[1]:end_idx[1], start_idx[2]:end_idx[2], start_idx[3]:end_idx[3]]
-	end
-end
-
-# ╔═╡ e25912f1-936e-4b02-ad26-d4cc9d684730
+# ╔═╡ b0638825-f983-49a9-b6d7-1679b53ed7ab
 # Define bead positions: one in the corner and one in the center
 begin
-	corner_bead_position = (16, sz[2] ÷ 2, sz[3] ÷ 2)  # Near corner, but slightly offset to avoid out-of-bounds
+	corner_bead_position = (10, sz[2] ÷ 2, sz[3] ÷ 2)  # Near corner, but slightly offset to avoid out-of-bounds
 	corner_bead_full_img = create_full_bead_image(sz, corner_bead_position, 1.5)
-	corner_bead_full_blur = simulate_lightsheet_image(corner_bead_full_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+	corner_bead_full_blur = simulate_lightsheet_image(corner_bead_full_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 
 	center_bead_position = (sz[1] ÷ 2, sz[2] ÷ 2, sz[3] ÷ 2)  # Center position
 	center_bead_full_img = create_full_bead_image(sz, center_bead_position, 1.5)
-	center_bead_full_blur = simulate_lightsheet_image(center_bead_full_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+	center_bead_full_blur = simulate_lightsheet_image(center_bead_full_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 end
 
-# ╔═╡ fb599d27-745f-4f11-be5c-a1d36821b8f3
-sub_sz = (30, 30, 30) # Size of the small visualization region
+# ╔═╡ 42b6f81b-5484-418d-8b9c-414d013dbf73
+    function crop_subregion(img, sub_sz, center_pos)
+        # Calculate the start and end indices for cropping
+        start_idx = (center_pos[1] - sub_sz[1] ÷ 2,
+                     center_pos[2] - sub_sz[2] ÷ 2,
+                     center_pos[3] - sub_sz[3] ÷ 2)
+        end_idx = (start_idx[1] + sub_sz[1] - 1,
+                   start_idx[2] + sub_sz[2] - 1,
+                   start_idx[3] + sub_sz[3] - 1)
 
-# ╔═╡ 4c8f3a25-c1f4-4a82-9b52-350b2c68e6bd
+        # Ensure indices are within bounds
+        start_idx = clamp.(start_idx, 1, size(img))
+        end_idx = clamp.(end_idx, 1, size(img))
+
+        # Crop the region
+        return img[start_idx[1]:end_idx[1], start_idx[2]:end_idx[2], start_idx[3]:end_idx[3]]
+    end
+
+# ╔═╡ bb55f4d0-5d0a-47e8-b8ae-2c8b5dc58e3c
 begin
+	sub_sz = (30, 30, 30) # Size of the small visualization region
 	center_bead_small_img = crop_subregion(center_bead_full_img, sub_sz, center_bead_position)
     center_bead_small_blur = crop_subregion(center_bead_full_blur, sub_sz, center_bead_position)
 	volume(center_bead_small_blur)
 end
 
-# ╔═╡ 2a91dad5-7eec-4d6e-a99f-3f8762697596
+# ╔═╡ 7da8b296-3406-4506-bff0-8107005f525d
 begin
     # Crop the small regions around the bead positions
     corner_bead_small_img = crop_subregion(corner_bead_full_img, sub_sz, corner_bead_position)
@@ -301,6 +250,8 @@ end
 md"## 3. Perform Deconvolution"
 
 # ╔═╡ 9efeaabe-2e09-4126-b940-b7433cbda4ce
+# ╠═╡ disabled = true
+#=╠═╡
 """
 	perform_deconvolution(nimg, psf_comp_t, psf_comp_s, h_det, bwd_components)
 
@@ -323,9 +274,13 @@ function perform_deconvolution(nimg, psf_comp_t, psf_comp_s, h_det, bwd_componen
 
     return res
 end
+  ╠═╡ =#
 
 # ╔═╡ 356b8723-e38b-4b75-b33f-91fda1029451
+# ╠═╡ disabled = true
+#=╠═╡
 @bind v1 PlutoUI.Slider(1:1:4, default=4, show_value=true)
+  ╠═╡ =#
 
 # ╔═╡ 99d706fc-5a70-4def-9c14-6d3a93116ff1
 # ╠═╡ disabled = true
@@ -364,24 +319,44 @@ end
 md"# 4. Filaments Example"
 
 # ╔═╡ bed1ff1b-c291-406e-b3c1-e87c9cd67caa
+# ╠═╡ disabled = true
+#=╠═╡
 # create a 3D filaments image
 fila_img = filaments3D(sz)
+  ╠═╡ =#
 
 # ╔═╡ 6d1f2781-5c7b-4a1f-a6e0-9f4ea8d8d14b
+# ╠═╡ disabled = true
+#=╠═╡
 volume(fila_img)
+  ╠═╡ =#
 
 # ╔═╡ be1175a7-a315-482b-82b9-6d53bc927b75
+# ╠═╡ disabled = true
+#=╠═╡
 @bind t2 PlutoUI.Slider(1:1:20, default=20, show_value=true)
+  ╠═╡ =#
 
 # ╔═╡ 99a6e124-eac5-44f6-bce7-1b09f8599b2a
+# ╠═╡ disabled = true
+#=╠═╡
 # blur the filaments image with the first t2 components of lightsheet PSF
 begin
 fila_img_blur = simulate_lightsheet_image(fila_img, sz, psf_comp_t, psf_comp_s, h_det, t2)
 fila_nimg = poisson(fila_img_blur, 180)
 volume(fila_nimg)
 end
+  ╠═╡ =#
+
+# ╔═╡ bf5ef0ae-487f-4a8a-8933-4642eb2aca8b
+# ╠═╡ disabled = true
+#=╠═╡
+using Printf
+  ╠═╡ =#
 
 # ╔═╡ 6fa07b89-b9bd-48a2-9d39-04c6f3234de1
+# ╠═╡ disabled = true
+#=╠═╡
 function compute_NCC(array1::Array{Float32, 3}, array2::Array{Float32, 3})
     # Ensure the arrays have the same dimensions
     if size(array1) != size(array2)
@@ -416,9 +391,13 @@ function compute_NCC(array1::Array{Float32, 3}, array2::Array{Float32, 3})
     return NCC
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 992cf406-72e6-43e1-a38b-2387cb778adb
+# ╠═╡ disabled = true
+#=╠═╡
 @bind v2 PlutoUI.Slider(1:1:6, default=1, show_value=true)
+  ╠═╡ =#
 
 # ╔═╡ d36af82b-a9ee-4c56-a67f-39907a70b39e
 # ╠═╡ disabled = true
@@ -470,7 +449,6 @@ Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoTest = "cb4044da-4d16-4ffa-a6a3-8cad7f73ebdc"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 PointSpreadFunctions = "e8810a93-244e-46c5-8da3-35c5dd956001"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 SyntheticObjects = "e7028c27-0967-45e9-8fdb-dbc10ccb2b0a"
 
@@ -492,7 +470,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "f1117e6e0225476587b1a338ddb966ca6fb79dbf"
+project_hash = "8f9242e9982c1f82c005ac324a3cdadb604a6483"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -2567,32 +2545,31 @@ version = "1.4.1+1"
 # ╠═ebd51ba1-8a5a-4a9d-afba-d71825cc2195
 # ╠═25337730-b2c3-4b79-9cfb-c9d709398334
 # ╠═45bc0270-d6c2-43c9-bdfc-c9ed2b2b165b
+# ╠═c41b41bf-33f2-46b5-9f14-b80ec1242ef1
 # ╟─d32b6c5e-a724-4a32-b3d1-c0b802d028c5
 # ╠═7784c364-95fa-4713-aaa3-f784bb12fd02
 # ╟─eb47b33e-078d-4e44-b621-e5d68555c54d
-# ╠═0e0b9ac7-3cb1-41d7-b90f-78bde0af8678
-# ╠═19c5aaad-7a8c-4d48-88ee-c3cdb81d591e
-# ╠═e95ac99c-b330-4e5e-a82a-57bb57d5bb6a
-# ╠═17aff1a1-2d8f-40ec-87cf-805bd657583e
-# ╠═c5765c7f-33ea-4e63-a1f8-5fa91c763c66
-# ╠═7f1bf4d8-94aa-4344-9a18-29b702bcd5df
-# ╠═160e41a3-70f2-4cd3-9208-c98fe336ea34
-# ╠═0a9ad5a3-de51-4688-8f54-527b58e8eedf
-# ╠═f8e4eb14-e710-47d1-b119-b5cd42a9275d
-# ╠═61be4784-bbc6-436c-8d44-f590efaa3cfd
-# ╠═065c8a55-4e0a-4216-b98b-00fef317b036
-# ╟─71865013-0629-4794-b30a-0208e06766b4
-# ╠═0eba71d9-1520-4a8a-8168-9c39518253ce
-# ╠═a0abcdb1-93fa-420d-9081-ea4814a5cf7e
-# ╠═3a1cc28d-4b9f-4931-b60d-89f1b1016790
-# ╠═39fd0ef0-84c0-4605-9d6b-7281e4d2bb6d
-# ╠═a2edfbd5-c4a5-4e69-bcf6-cf5524c9ac85
-# ╠═e25912f1-936e-4b02-ad26-d4cc9d684730
-# ╠═fb599d27-745f-4f11-be5c-a1d36821b8f3
-# ╠═4c8f3a25-c1f4-4a82-9b52-350b2c68e6bd
-# ╠═2a91dad5-7eec-4d6e-a99f-3f8762697596
+# ╠═1dd75871-b80b-4e0a-8c44-1bc267d4aad5
+# ╠═16fca82a-5475-44ae-be77-d9aaeba3a358
+# ╠═f4e3e249-177b-443a-aec4-c302311962e0
+# ╠═ddb2fc37-c995-4474-82df-0f7b7181baa1
+# ╠═32a1abbc-66f8-4539-a392-1fa741fcef52
+# ╟─b6e24e3a-e731-4de9-87f7-73481bf2c93e
+# ╠═62ecf0f6-4926-41e7-80e1-7a9053c9e140
+# ╠═7a6ac63b-9102-4b32-9f5a-5eae213fb597
+# ╟─6c2cfdd6-2ab5-4e79-ad59-cddc7c0fb5cb
+# ╟─d2e440ac-6caf-4a0c-8199-579b6c899243
+# ╠═8b1c7c9b-923e-41e1-b4ff-d25ad97d68b4
+# ╠═0655e44c-0c8d-44a5-a090-7a87ab580146
+# ╠═fd2cd913-b18c-4e72-8c93-55a1ce06e5bd
+# ╠═a730eae9-9721-430d-af3d-7bc0d7b5b54a
+# ╠═911d1d2e-ea34-4681-852f-5b463670e173
+# ╟─a16713d6-ce60-46ca-bba1-4abcfecc975f
+# ╟─b0638825-f983-49a9-b6d7-1679b53ed7ab
+# ╟─42b6f81b-5484-418d-8b9c-414d013dbf73
+# ╠═bb55f4d0-5d0a-47e8-b8ae-2c8b5dc58e3c
+# ╠═7da8b296-3406-4506-bff0-8107005f525d
 # ╠═7bbf50ea-8c0e-4643-a766-7d4ad99b941d
-# ╠═d700b1bb-d20e-4ca1-8c83-10aa33fa23b3
 # ╠═9efeaabe-2e09-4126-b940-b7433cbda4ce
 # ╠═356b8723-e38b-4b75-b33f-91fda1029451
 # ╠═99d706fc-5a70-4def-9c14-6d3a93116ff1
