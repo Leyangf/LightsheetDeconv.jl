@@ -1,7 +1,3 @@
-# ----------------------------------------------------------------------
-# Importing necessary libraries and setting up configurations
-# ----------------------------------------------------------------------
-
 include("../src/LightsheetDeconv.jl")
 include("../src/util.jl")
 
@@ -14,62 +10,28 @@ using View5D
 using GLMakie
 
 # ----------------------------------------------------------------------
-# Define the Point Spread Function (PSF)
+# Define PSF
 # ----------------------------------------------------------------------
-
-# Define parameters for PSF simulation
 sz = (128, 128, 128)
-pp_illu = PSFParams(0.488, 0.25, 1.52)
-aberr = Aberrations(
-    [Zernike_Tilt, Zernike_Defocus, Zernike_VerticalAstigmatism, Zernike_VerticalTrefoil, Zernike_Spherical],
-    [-0.78, -1.36, -1.3, 0.2, -1.2])
-pp_det = PSFParams(0.525, 0.772, 1.52; method=MethodPropagateIterative, aberrations=aberr)
-sampling = (0.2, 0.2, 0.2)
+sampling = (0.13, 0.13, 0.13)
+aberr = Aberrations([Zernike_Tilt, Zernike_ObliqueAstigmatism, Zernike_Defocus, Zernike_VerticalTrefoil, Zernike_HorizontalComa],[-0.78, -1.3, -2.36, -0.4, -1.21])
+pp_det = PSFParams(0.525, 1, 1.35; method=MethodPropagateIterative, aberrations= aberr) # parameters for the detection PSF
+pp_ill = PSFParams(0.488, 0.25, 1.35) # parameters for the illumination PSF
 
-# Generate PSF components
-psf_comp_t, psf_comp_s, h_det = LightSheetSimulation.simulate_lightsheet_psf(sz, pp_illu, pp_det, sampling, 20)
+psf_comp_x, psf_comp_z = LightSheetSimulation.simulate_lightsheet_psf(sz, pp_ill, sampling, 4)
+h_det = psf(sz, pp_det; sampling=sampling)
 
 # ----------------------------------------------------------------------
-# Function to load and blur the image
+# Generate noisy images
 # ----------------------------------------------------------------------
 
-# Define bead positions
-edge_bead_position = (30, sz[2] ÷ 2, sz[3] ÷ 2)  # Near edge, offset to avoid out-of-bounds
-center_bead_position = (sz[1] ÷ 2, sz[2] ÷ 2, sz[3] ÷ 2)  # Center position
-
-# Create full-size images with the beads
-edge_bead_full_img = TestFunctions.create_full_bead_image(sz, edge_bead_position, 2.0)
-center_bead_full_img = TestFunctions.create_full_bead_image(sz, center_bead_position, 2.0)
-
-# Simulate light-sheet images for the full-size regions
-edge_bead_full_blur = LightSheetSimulation.simulate_lightsheet_image(edge_bead_full_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
-center_bead_full_blur = LightSheetSimulation.simulate_lightsheet_image(center_bead_full_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
-
-# Define the size of the full image and the smaller sub-region
-sub_sz = (30, 30, 30)
-
-# Crop the small regions around the bead positions
-edge_bead_small_img = TestFunctions.crop_subregion(edge_bead_full_img, sub_sz, edge_bead_position)
-edge_bead_small_blur = TestFunctions.crop_subregion(edge_bead_full_blur, sub_sz, edge_bead_position)
-center_bead_small_img = TestFunctions.crop_subregion(center_bead_full_img, sub_sz, center_bead_position)
-center_bead_small_blur = TestFunctions.crop_subregion(center_bead_full_blur, sub_sz, center_bead_position)    
-
-# Visualize the small regions for comparison
-volume(edge_bead_small_blur)
-volume(center_bead_small_blur)
-@vt edge_bead_small_blur, center_bead_small_blur
-
-
-# Generate and blur evenly spaced beads image
 beads_img = TestFunctions.create_evenly_beads(sz, 1000, 3.0)
-beads_img_blur = LightSheetSimulation.simulate_lightsheet_image(beads_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+beads_img_blur = LightSheetSimulation.simulate_lightsheet_image(beads_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 volume(beads_img_blur)
 @vt beads_img_blur
 
-
-# Use filaments as object
 fila_img = filaments3D(sz)
-fila_img_blur = LightSheetSimulation.simulate_lightsheet_image(fila_img, sz, psf_comp_t, psf_comp_s, h_det, 20)
+fila_img_blur = LightSheetSimulation.simulate_lightsheet_image(fila_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 fila_nimg = poisson(fila_img_blur, 180)
 volume(fila_nimg)
 
@@ -77,26 +39,8 @@ volume(fila_nimg)
 # Deconvolution of the image with main componnets
 # ----------------------------------------------------------------------
 
-# Perform deconvolution for edge and center bead images
-res_edge = LightSheetDeconv.perform_deconvolution(edge_bead_full_blur, psf_comp_t, psf_comp_s, h_det, 4)
-res_center = LightSheetDeconv.perform_deconvolution(center_bead_full_blur, psf_comp_t, psf_comp_s, h_det, 4)
-
-# Crop the deconvolved results
-edge_bead_small_deconv = TestFunctions.crop_subregion(res_edge[:obj], sub_sz, edge_bead_position)
-center_bead_small_deconv = TestFunctions.crop_subregion(res_center[:obj], sub_sz, center_bead_position)
-
-# Visualize the deconvolved images
-volume(edge_bead_small_deconv)
-volume(center_bead_small_deconv)
-@vt edge_bead_small_img, edge_bead_small_blur, edge_bead_small_deconv
-
-# Deconvolution of the beads image
-res_beads = LightSheetDeconv.perform_deconvolution(beads_img_blur, psf_comp_t, psf_comp_s, h_det, 4)
-beads_img_deconv = res_beads[:obj]
-volume(beads_img_deconv)
-
 # Deconvolution of the filaments image
-res_fila = LightSheetDeconv.perform_deconvolution(fila_nimg, psf_comp_t, psf_comp_s, h_det, 4)
+res_fila = LightSheetDeconv.perform_deconvolution(fila_nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=20, goods_weight=0.01)
 fila_img_deconv = res_fila[:obj]
 volume(fila_img_deconv)
 @vt fila_img, fila_nimg, fila_img_deconv
