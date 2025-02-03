@@ -8,6 +8,7 @@ using PointSpreadFunctions, FourierTools, NDTools, Noise
 using SyntheticObjects
 using View5D
 using GLMakie
+using Plots
 
 # ----------------------------------------------------------------------
 # Define PSF
@@ -36,12 +37,12 @@ img = fila_img
 nimg = poisson(fila_img_blur, 1000)
 
 # non-regularizer deconvolution result
-res0 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=120, reg_weight=0, reg_type="tv")
+res0 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=100, reg_weight=0, reg_type="tv")
 img_deconv0 = Float32.(res0[:obj])
 ncc_value0 = TestFunctions.compute_NCC(img_deconv0, img)
 
 # with regualrizer
-res1 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=40, reg_weight=0.006, reg_type="tikhonov")
+res1 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=31, reg_weight=0.003, reg_type="tikhonov")
 img_deconv1 = Float32.(res1[:obj])
 ncc_value1 = TestFunctions.compute_NCC(img_deconv1, img)
 
@@ -49,9 +50,13 @@ ncc_value1 = TestFunctions.compute_NCC(img_deconv1, img)
 # other compare method
 ssim_value0 = TestFunctions.ssim3d(img_deconv0, img)
 ssim_value1 = TestFunctions.ssim3d(img_deconv1, img)
-volume(img_deconv0)
+volume(img_deconv1)
 @vt img, nimg, img_deconv1
 
+center_y = size(img, 2) ÷ 2
+xz_slice = img_deconv1[:, center_y, :]
+xz_slice = xz_slice ./ maximum(xz_slice)
+Plots.heatmap(xz_slice, color=:viridis, aspect_ratio=:equal, axis=nothing, frame=:none, colorbar=false)
 
 # ----------------------------------------------------------------------
 # Find the beast combination of iteration number and reg_weight and plot
