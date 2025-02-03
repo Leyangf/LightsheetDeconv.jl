@@ -1,12 +1,9 @@
 module TestFunctions
-    export create_evenly_beads, compute_NCC
+    export create_evenly_beads, compute_NCC, ssim3d
     using Statistics
+    using ImageFiltering
 
-    # ----------------------------------------------------------------------
-    # Function: create_evenly_beads
-    # Description: Generates evenly spaced beads in a 3D space with specified intensity.
-    # ----------------------------------------------------------------------
-    function create_evenly_beads(sz, num_beads::Int, bead_intensity::Float64)
+     function create_evenly_beads(sz, num_beads::Int, bead_intensity::Float64)
         img = zeros(Float64, sz)
         
         # Calculate the step size for each dimension based on cube root of the number of beads
@@ -31,10 +28,6 @@ module TestFunctions
         return img
     end
 
-    # ----------------------------------------------------------------------
-    # Function: compute_NCC
-    # Description: Computes the normalized cross-correlation (NCC) between two arrays.
-    # ----------------------------------------------------------------------
     function compute_NCC(array1::AbstractArray{Float32, N}, array2::AbstractArray{Float32, N}) where N
         if size(array1) != size(array2)
             throw(ArgumentError("Arrays must have the same dimensions"))
@@ -64,4 +57,38 @@ module TestFunctions
         return numerator / denominator
     end
 
+end
+
+function ssim3d(img1::Array{Float32,3}, img2::Array{Float32,3}; window_size=(11,11,11), sigma=1.5, L=1.0)
+    @assert size(img1) == size(img2) "Input volumes must have the same dimensions."
+
+    # Constants for SSIM
+    c1 = (0.01 * L)^2
+    c2 = (0.03 * L)^2
+
+    # Create a 3D Gaussian kernel.
+    # The kernel is separable; KernelFactors.gaussian returns a tuple of 1D kernels.
+    kernel = KernelFactors.gaussian((sigma, sigma, sigma), window_size)
+
+    # Compute local means via convolution with boundary handling.
+    μ1 = imfilter(img1, kernel, Pad(:replicate))
+    μ2 = imfilter(img2, kernel, Pad(:replicate))
+
+    # Precompute squares and products.
+    μ1_sq = μ1 .^ 2
+    μ2_sq = μ2 .^ 2
+    μ1μ2 = μ1 .* μ2
+
+    # Compute local variances and covariance.
+    σ1_sq = imfilter(img1 .^ 2, kernel, Pad(:replicate)) .- μ1_sq
+    σ2_sq = imfilter(img2 .^ 2, kernel, Pad(:replicate)) .- μ2_sq
+    σ12   = imfilter(img1 .* img2, kernel, Pad(:replicate)) .- μ1μ2
+
+    # Compute the SSIM map over the volume.
+    numerator   = (2 .* μ1μ2 .+ c1) .* (2 .* σ12 .+ c2)
+    denominator = (μ1_sq .+ μ2_sq .+ c1) .* (σ1_sq .+ σ2_sq .+ c2)
+    ssim_map    = numerator ./ denominator
+
+    # Return the mean SSIM over all voxels.
+    return mean(ssim_map)
 end
