@@ -36,6 +36,15 @@ module LightSheetDeconv
         return alpha1 * total1 + alpha0 * total2
     end
 
+    function huber_tv_roughness(img::AbstractArray; delta=0.1)
+        total = zero(eltype(img))
+        for d in 1:ndims(img)
+            r = diff(img, dims=d)
+            total += sum(ifelse.(abs.(r) .< delta, (r .^ 2) / (2 * delta), abs.(r) .- delta / 2))
+        end
+        return total
+    end
+
     function perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, bwd_components;
         iterations=50, reg_weight=0.01, reg_type="goods")
 sz = size(nimg)
@@ -58,8 +67,10 @@ elseif reg_type == "tv"
 reg_weight * tv_roughness(current_obj[])
 elseif reg_type == "tgv"
 reg_weight * tgv_roughness(current_obj[])
+elseif reg_type == "huber_tv"
+    reg_weight * huber_tv_roughness(current_obj[])
 else
-error("Unknown regularizer type: $reg_type. Use \"goods\", \"tv\", or \"tgv\".")
+error("Unknown regularizer type: $reg_type. Use \"goods\", \"tv\", or \"tgv\", or \"huber_tv\".")
 end
 return data_loss + reg_loss
 end
