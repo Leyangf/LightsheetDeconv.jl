@@ -57,38 +57,39 @@ module TestFunctions
         return numerator / denominator
     end
 
-end
 
-function ssim3d(img1::Array{Float32,3}, img2::Array{Float32,3}; window_size=(11,11,11), sigma=1.5, L=1.0)
-    @assert size(img1) == size(img2) "Input volumes must have the same dimensions."
+    function ssim3d(img1::Array{Float32,3}, img2::Array{Float32,3}; window_size=(11,11,11), sigma=1.5, L=1.0)
+        @assert size(img1) == size(img2) "Input volumes must have the same dimensions."
 
-    # Constants for SSIM
-    c1 = (0.01 * L)^2
-    c2 = (0.03 * L)^2
+        # Constants for SSIM
+        c1 = (0.01 * L)^2
+        c2 = (0.03 * L)^2
 
-    # Create a 3D Gaussian kernel.
-    # The kernel is separable; KernelFactors.gaussian returns a tuple of 1D kernels.
-    kernel = KernelFactors.gaussian((sigma, sigma, sigma), window_size)
+        # Create a 3D Gaussian kernel.
+        # The kernel is separable; KernelFactors.gaussian returns a tuple of 1D kernels.
+        kernel = KernelFactors.gaussian((sigma, sigma, sigma), window_size)
 
-    # Compute local means via convolution with boundary handling.
-    μ1 = imfilter(img1, kernel, Pad(:replicate))
-    μ2 = imfilter(img2, kernel, Pad(:replicate))
+        # Compute local means via convolution with boundary handling.
+        μ1 = imfilter(img1, kernel, Pad(:replicate))
+        μ2 = imfilter(img2, kernel, Pad(:replicate))
 
-    # Precompute squares and products.
-    μ1_sq = μ1 .^ 2
-    μ2_sq = μ2 .^ 2
-    μ1μ2 = μ1 .* μ2
+        # Precompute squares and products.
+        μ1_sq = μ1 .^ 2
+        μ2_sq = μ2 .^ 2
+        μ1μ2 = μ1 .* μ2
 
-    # Compute local variances and covariance.
-    σ1_sq = imfilter(img1 .^ 2, kernel, Pad(:replicate)) .- μ1_sq
-    σ2_sq = imfilter(img2 .^ 2, kernel, Pad(:replicate)) .- μ2_sq
-    σ12   = imfilter(img1 .* img2, kernel, Pad(:replicate)) .- μ1μ2
+        # Compute local variances and covariance.
+        σ1_sq = imfilter(img1 .^ 2, kernel, Pad(:replicate)) .- μ1_sq
+        σ2_sq = imfilter(img2 .^ 2, kernel, Pad(:replicate)) .- μ2_sq
+        σ12   = imfilter(img1 .* img2, kernel, Pad(:replicate)) .- μ1μ2
 
-    # Compute the SSIM map over the volume.
-    numerator   = (2 .* μ1μ2 .+ c1) .* (2 .* σ12 .+ c2)
-    denominator = (μ1_sq .+ μ2_sq .+ c1) .* (σ1_sq .+ σ2_sq .+ c2)
-    ssim_map    = numerator ./ denominator
+        # Compute the SSIM map over the volume.
+        numerator   = (2 .* μ1μ2 .+ c1) .* (2 .* σ12 .+ c2)
+        denominator = (μ1_sq .+ μ2_sq .+ c1) .* (σ1_sq .+ σ2_sq .+ c2)
+        ssim_map    = numerator ./ denominator
 
-    # Return the mean SSIM over all voxels.
-    return mean(ssim_map)
+        # Return the mean SSIM over all voxels.
+        return mean(ssim_map)
+    end
+
 end
