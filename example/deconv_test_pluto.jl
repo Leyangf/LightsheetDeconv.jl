@@ -50,7 +50,7 @@ md"## 1. Simulate Beam Profile"
 
 # ╔═╡ 1dd75871-b80b-4e0a-8c44-1bc267d4aad5
 begin
-h_ill = sum(abs2.(sum(apsf((128, 128, 128), pp_ill; sampling=(0.13, 0.13, 0.13)), dims=1)), dims=4)[1, :, :, 1]
+h_ill = sum(abs2.(sum(apsf(sz, pp_ill; sampling=(0.13, 0.13, 0.13)), dims=1)), dims=4)[1, :, :, 1]
 h_ill= h_ill./maximum(h_ill)
 end
 
@@ -85,15 +85,32 @@ end
 
 # ╔═╡ f4e3e249-177b-443a-aec4-c302311962e0
 begin
-	h_ill_g = gaussian_profile((128, 128), pp_ill; sampling=(0.13,0.13), width_factor = 1) 
+	h_ill_g = gaussian_profile((128, 128), pp_ill; sampling=(0.13,0.13), width_factor = 0.85) 
 	h_ill_g= h_ill_g./maximum(h_ill_g)
 end
 
-# ╔═╡ ddb2fc37-c995-4474-82df-0f7b7181baa1
-Plots.heatmap(h_ill[45:83, :], color=:viridis, xlabel="Dimension 1 (sz[1])", ylabel="Dimension 3 (sz[3])", title="Visualization of h_ill", aspect_ratio=:equal)
+# ╔═╡ c9439141-0c07-42ee-89e2-c3fe18d97e81
+function plot_intensity_profile(intensity_map; axis=:y, title_text="Intensity Profile")
+    sz_x, sz_y = size(intensity_map)
 
-# ╔═╡ 32a1abbc-66f8-4539-a392-1fa741fcef52
-Plots.heatmap(h_ill_g[45:83, :], color=:viridis, xlabel="Dimension 1 (sz[1])", ylabel="Dimension 3 (sz[3])",  title="Gaussian Beam Profile along z-axis", aspect_ratio=:equal)
+    if axis == :y
+        axis_range = range(-64*0.13, 64*0.13, length=sz_x)  # 设置正确的物理范围
+        intensity_profile = intensity_map[:, div(sz_y, 2)]
+    elseif axis == :x
+        axis_range = range(-64*0.13, 64*0.13, length=sz_y)  # 设置正确的物理范围
+        intensity_profile = intensity_map[div(sz_x, 2), :]
+    else
+        error("Invalid axis. Use :x or :y.")
+    end
+
+    Plots.plot(axis_range, intensity_profile, label=nothing,  # 不显示图例
+         xlabel="Lateral position (μm)", ylabel="Intensity",
+         title=title_text, linewidth=2)
+end
+
+
+# ╔═╡ ddb2fc37-c995-4474-82df-0f7b7181baa1
+Plots.heatmap(h_ill, color=:viridis, xlabel="Dimension 1 (sz[1])", ylabel="Dimension 3 (sz[3])", title="Visualization of h_ill", aspect_ratio=:equal)
 
 # ╔═╡ b6e24e3a-e731-4de9-87f7-73481bf2c93e
 md"## 2. Perform SVD and Reconstruct Beam Profile"
@@ -127,20 +144,34 @@ end
 
 # ╔═╡ d2e440ac-6caf-4a0c-8199-579b6c899243
 begin
-plot_opts = Dict(
-    :color => :viridis,
-    :aspect_ratio => :equal,
-    :frame => false,
-    :ticks => false,
-    :colorbar => false
-)
+    plot_opts = Dict(
+        :color => :viridis,
+        :aspect_ratio => :equal,
+        :frame => false,
+        :ticks => false,
+        :colorbar => false,
+        :axis => false
+    )
 
-p1 = Plots.heatmap(h_ill[45:83, :]; plot_opts...)
-p2 = Plots.heatmap(h_ill_re1[45:83, :]; plot_opts...)
-p3 = Plots.heatmap(h_ill_re2[45:83, :]; plot_opts...)
+    min_val = minimum([h_ill_g; h_ill; h_ill_re1; h_ill_re2])
+    max_val = maximum([h_ill_g; h_ill; h_ill_re1; h_ill_re2])
 
-Plots.plot(p1, p2, p3, layout=(3,1), link=:both, size=(800,600))
+    heatmap_opts = merge(plot_opts, Dict(:clim => (min_val, max_val)))
+	
+	p0 = Plots.heatmap(h_ill_g[44:85, :]; heatmap_opts...)
+    p1 = Plots.heatmap(h_ill[44:85, :]; heatmap_opts...)
+    p2 = Plots.heatmap(h_ill_re1[44:85, :]; heatmap_opts...)
+    p3 = Plots.heatmap(h_ill_re2[44:85, :]; heatmap_opts...)
+	
+	p0_profile = plot_intensity_profile(h_ill_g, axis=:y, title_text="Gaussian Model")
+	p1_profile = plot_intensity_profile(h_ill, axis=:y, title_text="Diffraction Model")
+    p2_profile = plot_intensity_profile(h_ill_re1, axis=:y, title_text="Reconstructed with 1 Component")
+    p3_profile = plot_intensity_profile(h_ill_re2, axis=:y, title_text="Reconstructed with 2 Components")
+
+    Plots.plot(p0, p0_profile, p1, p1_profile, p2, p2_profile, p3, p3_profile,
+               layout=(4,2), size=(900, 900), dpi=300)
 end
+
 
 # ╔═╡ 8b1c7c9b-923e-41e1-b4ff-d25ad97d68b4
 md"## 3. Forward Simulation"
@@ -204,11 +235,11 @@ end
 # Define bead positions: one in the corner and one in the center
 begin
 	corner_bead_position = (10, sz[2] ÷ 2, sz[3] ÷ 2)  # Near corner, but slightly offset to avoid out-of-bounds
-	corner_bead_full_img = create_full_bead_image(sz, corner_bead_position, 1.5)
+	corner_bead_full_img = create_full_bead_image(sz, corner_bead_position, 1.0)
 	corner_bead_full_blur = simulate_lightsheet_image(corner_bead_full_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 
 	center_bead_position = (sz[1] ÷ 2, sz[2] ÷ 2, sz[3] ÷ 2)  # Center position
-	center_bead_full_img = create_full_bead_image(sz, center_bead_position, 1.5)
+	center_bead_full_img = create_full_bead_image(sz, center_bead_position, 1.0)
 	center_bead_full_blur = simulate_lightsheet_image(center_bead_full_img, sz, psf_comp_x, psf_comp_z, h_det, 2)
 end
 
@@ -232,7 +263,7 @@ end
 
 # ╔═╡ bb55f4d0-5d0a-47e8-b8ae-2c8b5dc58e3c
 begin
-	sub_sz = (30, 30, 30) # Size of the small visualization region
+	sub_sz = (25, 25, 25) # Size of the small visualization region
 	center_bead_small_img = crop_subregion(center_bead_full_img, sub_sz, center_bead_position)
     center_bead_small_blur = crop_subregion(center_bead_full_blur, sub_sz, center_bead_position)
 	volume(center_bead_small_blur)
@@ -247,194 +278,7 @@ begin
 end
 
 # ╔═╡ 7bbf50ea-8c0e-4643-a766-7d4ad99b941d
-md"## 3. Perform Deconvolution"
-
-# ╔═╡ 9efeaabe-2e09-4126-b940-b7433cbda4ce
-# ╠═╡ disabled = true
-#=╠═╡
-"""
-	perform_deconvolution(nimg, psf_comp_t, psf_comp_s, h_det, bwd_components)
-
-Perform deconvolution on an image `nimg` using a forward model defined by the light-sheet simulation and the components of the point spread function (PSF). Using pakcage Inversemodeling.jl, the deconvolution optimizes the estimated object that, when convolved with the PSF, best matches the observed noisy image `nimg`.
-"""
-function perform_deconvolution(nimg, psf_comp_t, psf_comp_s, h_det, bwd_components)
-    sz = size(nimg)
-    # Define the forward model for deconvolution
-    function forward_model(params)
-        obj = params(:obj)
-        return simulate_lightsheet_image(obj, sz, psf_comp_t, psf_comp_s, h_det, bwd_components)
-    end
-
-    # Create forward and backward models
-    start_val = (obj=Positive(mean(nimg) .* ones(Float64, size(nimg))),)
-    start_vals, fixed_vals, forward, backward, get_fit_results = create_forward(forward_model, start_val)
-
-    # Optimize the model
-    res, myloss = optimize_model(start_val, forward_model, nimg)
-
-    return res
-end
-  ╠═╡ =#
-
-# ╔═╡ 356b8723-e38b-4b75-b33f-91fda1029451
-# ╠═╡ disabled = true
-#=╠═╡
-@bind v1 PlutoUI.Slider(1:1:4, default=4, show_value=true)
-  ╠═╡ =#
-
-# ╔═╡ 99d706fc-5a70-4def-9c14-6d3a93116ff1
-# ╠═╡ disabled = true
-#=╠═╡
-# perform deconvolution of the beads image based on the first v1 componets of lightsheet PSF
-begin
-	res_beads  = perform_deconvolution(beads_img_blur, psf_comp_t, psf_comp_s, h_det, v1)
-	beads_img_deconv = res_beads[:obj]
-	volume(beads_img_deconv)
-end
-  ╠═╡ =#
-
-# ╔═╡ 1e80f660-53d3-4464-9107-eae9ef8c92a3
-# ╠═╡ disabled = true
-#=╠═╡
-# deconvolution result for the corner bead
-begin
-res_corner = perform_deconvolution(corner_bead_full_blur, psf_comp_t, psf_comp_s, h_det, v1)
-corner_bead_small_deconv = crop_subregion(res_corner[:obj], sub_sz, corner_bead_position)
-volume(corner_bead_small_deconv)
-end
-  ╠═╡ =#
-
-# ╔═╡ e55e7639-9695-4ca2-87c5-362783e06859
-# ╠═╡ disabled = true
-#=╠═╡
-# deconvolution result for the center bead
-begin
-res_center = perform_deconvolution(center_bead_full_blur, psf_comp_t, psf_comp_s, h_det, v1)
-center_bead_small_deconv = crop_subregion(res_center[:obj], sub_sz, center_bead_position)
-volume(center_bead_small_deconv)
-end
-  ╠═╡ =#
-
-# ╔═╡ 077d00f5-b955-4f69-8846-ceda1c1accdf
-md"# 4. Filaments Example"
-
-# ╔═╡ bed1ff1b-c291-406e-b3c1-e87c9cd67caa
-# ╠═╡ disabled = true
-#=╠═╡
-# create a 3D filaments image
-fila_img = filaments3D(sz)
-  ╠═╡ =#
-
-# ╔═╡ 6d1f2781-5c7b-4a1f-a6e0-9f4ea8d8d14b
-# ╠═╡ disabled = true
-#=╠═╡
-volume(fila_img)
-  ╠═╡ =#
-
-# ╔═╡ be1175a7-a315-482b-82b9-6d53bc927b75
-# ╠═╡ disabled = true
-#=╠═╡
-@bind t2 PlutoUI.Slider(1:1:20, default=20, show_value=true)
-  ╠═╡ =#
-
-# ╔═╡ 99a6e124-eac5-44f6-bce7-1b09f8599b2a
-# ╠═╡ disabled = true
-#=╠═╡
-# blur the filaments image with the first t2 components of lightsheet PSF
-begin
-fila_img_blur = simulate_lightsheet_image(fila_img, sz, psf_comp_t, psf_comp_s, h_det, t2)
-fila_nimg = poisson(fila_img_blur, 180)
-volume(fila_nimg)
-end
-  ╠═╡ =#
-
-# ╔═╡ bf5ef0ae-487f-4a8a-8933-4642eb2aca8b
-# ╠═╡ disabled = true
-#=╠═╡
-using Printf
-  ╠═╡ =#
-
-# ╔═╡ 6fa07b89-b9bd-48a2-9d39-04c6f3234de1
-# ╠═╡ disabled = true
-#=╠═╡
-function compute_NCC(array1::Array{Float32, 3}, array2::Array{Float32, 3})
-    # Ensure the arrays have the same dimensions
-    if size(array1) != size(array2)
-        throw(ArgumentError("Arrays must have the same dimensions"))
-    end
-
-    # Compute the means of the arrays
-    mean1 = mean(array1)
-    mean2 = mean(array2)
-
-    # Subtract the means from the arrays (zero-mean arrays)
-    array1_zero_mean = array1 .- mean1
-    array2_zero_mean = array2 .- mean2
-
-    # Compute the numerator: sum of element-wise product of zero-mean arrays
-    numerator = sum(array1_zero_mean .* array2_zero_mean)
-
-    # Compute the sum of squared zero-mean arrays (variance terms)
-    sum_sq_array1 = sum(array1_zero_mean .^ 2)
-    sum_sq_array2 = sum(array2_zero_mean .^ 2)
-
-    # Compute the denominator: sqrt of the product of the variances
-    denominator = sqrt(sum_sq_array1 * sum_sq_array2)
-
-    # Check for zero denominator to avoid division by zero
-    if denominator == 0
-        throw(ArgumentError("Denominator is zero, which means one or both arrays have no variance."))
-    end
-
-    # Return the normalized cross-correlation
-    NCC = numerator / denominator
-    return NCC
-end
-
-  ╠═╡ =#
-
-# ╔═╡ 992cf406-72e6-43e1-a38b-2387cb778adb
-# ╠═╡ disabled = true
-#=╠═╡
-@bind v2 PlutoUI.Slider(1:1:6, default=1, show_value=true)
-  ╠═╡ =#
-
-# ╔═╡ d36af82b-a9ee-4c56-a67f-39907a70b39e
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-# Measure the time taken for the deconvolution
-elapsed_seconds = @elapsed begin
-    # Perform deconvolution with v2 components
-    res_fila = perform_deconvolution(fila_nimg, psf_comp_t, psf_comp_s, h_det, v2)
-end
-
-# Output the time taken for the deconvolution
-@printf "Deconvolution Time = %.2f seconds\n" elapsed_seconds
-end
-  ╠═╡ =#
-
-# ╔═╡ 333cbec1-af8c-43e9-930a-9e64071b82df
-# ╠═╡ disabled = true
-#=╠═╡
-# perform deconvolution of the filaments image based on the first v2 componets of lightsheet PSF
-begin
-	fila_img_deconv = res_fila[:obj]
-	volume(fila_img_deconv)
-end
-  ╠═╡ =#
-
-# ╔═╡ fb9cc167-0227-41e0-ba2a-5d51b499285f
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-# Compute NCC between the deconvolved image and the original image
-ncc_value = compute_NCC(fila_img_deconv, fila_img)
-
-# Output the NCC value
-@printf "NCC Value = %.4f\n" ncc_value
-end
-  ╠═╡ =#
+md"## 4. Perform Deconvolution"
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2550,41 +2394,25 @@ version = "1.4.1+1"
 # ╠═7784c364-95fa-4713-aaa3-f784bb12fd02
 # ╟─eb47b33e-078d-4e44-b621-e5d68555c54d
 # ╠═1dd75871-b80b-4e0a-8c44-1bc267d4aad5
-# ╠═16fca82a-5475-44ae-be77-d9aaeba3a358
+# ╟─16fca82a-5475-44ae-be77-d9aaeba3a358
 # ╠═f4e3e249-177b-443a-aec4-c302311962e0
+# ╠═c9439141-0c07-42ee-89e2-c3fe18d97e81
 # ╠═ddb2fc37-c995-4474-82df-0f7b7181baa1
-# ╠═32a1abbc-66f8-4539-a392-1fa741fcef52
 # ╟─b6e24e3a-e731-4de9-87f7-73481bf2c93e
 # ╠═62ecf0f6-4926-41e7-80e1-7a9053c9e140
-# ╠═7a6ac63b-9102-4b32-9f5a-5eae213fb597
-# ╟─6c2cfdd6-2ab5-4e79-ad59-cddc7c0fb5cb
-# ╟─d2e440ac-6caf-4a0c-8199-579b6c899243
+# ╟─7a6ac63b-9102-4b32-9f5a-5eae213fb597
+# ╠═6c2cfdd6-2ab5-4e79-ad59-cddc7c0fb5cb
+# ╠═d2e440ac-6caf-4a0c-8199-579b6c899243
 # ╠═8b1c7c9b-923e-41e1-b4ff-d25ad97d68b4
 # ╠═0655e44c-0c8d-44a5-a090-7a87ab580146
 # ╠═fd2cd913-b18c-4e72-8c93-55a1ce06e5bd
 # ╠═a730eae9-9721-430d-af3d-7bc0d7b5b54a
 # ╠═911d1d2e-ea34-4681-852f-5b463670e173
-# ╟─a16713d6-ce60-46ca-bba1-4abcfecc975f
-# ╟─b0638825-f983-49a9-b6d7-1679b53ed7ab
+# ╠═a16713d6-ce60-46ca-bba1-4abcfecc975f
+# ╠═b0638825-f983-49a9-b6d7-1679b53ed7ab
 # ╟─42b6f81b-5484-418d-8b9c-414d013dbf73
 # ╠═bb55f4d0-5d0a-47e8-b8ae-2c8b5dc58e3c
 # ╠═7da8b296-3406-4506-bff0-8107005f525d
 # ╠═7bbf50ea-8c0e-4643-a766-7d4ad99b941d
-# ╠═9efeaabe-2e09-4126-b940-b7433cbda4ce
-# ╠═356b8723-e38b-4b75-b33f-91fda1029451
-# ╠═99d706fc-5a70-4def-9c14-6d3a93116ff1
-# ╠═1e80f660-53d3-4464-9107-eae9ef8c92a3
-# ╠═e55e7639-9695-4ca2-87c5-362783e06859
-# ╠═077d00f5-b955-4f69-8846-ceda1c1accdf
-# ╠═bed1ff1b-c291-406e-b3c1-e87c9cd67caa
-# ╠═6d1f2781-5c7b-4a1f-a6e0-9f4ea8d8d14b
-# ╠═be1175a7-a315-482b-82b9-6d53bc927b75
-# ╠═99a6e124-eac5-44f6-bce7-1b09f8599b2a
-# ╠═bf5ef0ae-487f-4a8a-8933-4642eb2aca8b
-# ╠═6fa07b89-b9bd-48a2-9d39-04c6f3234de1
-# ╠═992cf406-72e6-43e1-a38b-2387cb778adb
-# ╠═d36af82b-a9ee-4c56-a67f-39907a70b39e
-# ╠═333cbec1-af8c-43e9-930a-9e64071b82df
-# ╠═fb9cc167-0227-41e0-ba2a-5d51b499285f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
