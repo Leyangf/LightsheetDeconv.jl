@@ -31,7 +31,6 @@ beads_img_blur = LightSheetSimulation.simulate_lightsheet_image(beads_img, sz, p
 fila_img = filaments3D(sz)
 fila_img_blur = LightSheetSimulation.simulate_lightsheet_image(fila_img, sz, psf_comp_x, psf_comp_z, h_det, 4)
 
-
 # Optimization
 img = fila_img
 nimg = poisson(fila_img_blur, 1000)
@@ -42,7 +41,7 @@ img_deconv0 = Float32.(res0[:obj])
 ncc_value0 = TestFunctions.compute_NCC(img_deconv0, img)
 
 # with regualrizer
-res1 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=33, reg_weight=0.003, reg_type="tv")
+res1 = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2; iterations=40, reg_weight=0.006, reg_type="tikhonov")
 img_deconv1 = Float32.(res1[:obj])
 ncc_value1 = TestFunctions.compute_NCC(img_deconv1, img)
 
@@ -54,9 +53,12 @@ volume(img_deconv0)
 @vt img, nimg, img_deconv1
 
 
+# ----------------------------------------------------------------------
+# Find the beast combination of iteration number and reg_weight and plot
+# ----------------------------------------------------------------------
 using Base.Threads
-iterations_range = 25:38
-reg_weight_range = 0.0008:0.0002:0.03
+iterations_range = 29:33
+reg_weight_range = 0.0024:0.0005:0.0032
 
 best_ncc = -Inf
 best_iterations = 0
@@ -66,7 +68,7 @@ for iterations in iterations_range
     for reg_weight in reg_weight_range
         try
             res = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2;
-                iterations=iterations, reg_weight=reg_weight, reg_type="tv")
+                iterations=iterations, reg_weight=reg_weight, reg_type="tikhonov")
             img_deconv = Float32.(res[:obj])
             
             ncc_value = TestFunctions.compute_NCC(img_deconv, img)
@@ -85,3 +87,23 @@ for iterations in iterations_range
 end
 
 println("Best combination: iterations=$best_iterations, reg_weight=$best_reg_weight, NCC=$best_ncc")
+
+function compute_ncc_for_iterations(nimg, psf_comp_x, psf_comp_z, h_det, reg_weight, iter_range, img)
+    ncc_results = Dict{Int, Float32}()
+    
+    for iter in iter_range
+        res = LightSheetDeconv.perform_deconvolution(nimg, psf_comp_x, psf_comp_z, h_det, 2;
+                                                     iterations=iter, reg_weight=reg_weight, reg_type="tikhonov")
+        img_deconv = Float32.(res[:obj])
+        ncc_value = TestFunctions.compute_NCC(img_deconv, img)
+        ncc_results[iter] = ncc_value
+    end
+    
+    return ncc_results
+end
+
+iter_range = 1:3:100
+reg_weight = 0
+ncc_values = compute_ncc_for_iterations(nimg, psf_comp_x, psf_comp_z, h_det, reg_weight, iter_range, img)
+
+tuple(ncc_values...)
