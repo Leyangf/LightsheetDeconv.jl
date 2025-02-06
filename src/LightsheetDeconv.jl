@@ -24,15 +24,6 @@ module LightSheetDeconv
         return total
     end
 
-    function tv_roughness_epsilon(img::AbstractArray; epsilon=1e-6)
-        total = zero(eltype(img))
-        for d in 1:ndims(img)
-            r = diff(img, dims=d)
-            total += sum(sqrt.(abs2.(r) .+ epsilon))
-        end
-        return total
-    end
-
     function tikhonov_regularization(img::AbstractArray)
         return sum(abs2, img)
     end
@@ -57,8 +48,6 @@ module LightSheetDeconv
                 reg_weight * goods_roughness(current_obj[])
             elseif reg_type == "tv"
                 reg_weight * tv_roughness(current_obj[])
-            elseif reg_type == "tv_epsilon"
-                reg_weight * tv_roughness_epsilon(current_obj[]; epsilon=1e-6)
             elseif reg_type == "tikhonov"
                 reg_weight * tikhonov_regularization(current_obj[])
             else
